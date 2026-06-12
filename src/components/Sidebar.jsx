@@ -107,10 +107,12 @@ export default function Sidebar({ currentRoute, setRoute }) {
         </nav>
 
         <div className="sidebar-footer">
-          <div className={`db-status-badge ${isSupabaseConfigured ? 'connected' : 'local'}`}>
-            <span className="db-status-dot"></span>
-            <span>{isSupabaseConfigured ? 'Cloud DB Active' : 'Local Demo Mode'}</span>
-          </div>
+          {isSupabaseConfigured && (
+            <div className="db-status-badge connected">
+              <span className="db-status-dot"></span>
+              <span>Cloud DB Active</span>
+            </div>
+          )}
 
           <div className="sidebar-user-info">
             <div className="user-avatar">
