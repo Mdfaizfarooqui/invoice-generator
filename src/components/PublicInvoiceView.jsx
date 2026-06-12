@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { formatDate, formatCurrency, getStatusColor } from '../utils/helpers';
-import { Receipt, Printer, Download, CreditCard, CheckCircle, Loader2, QrCode } from 'lucide-react';
+import { Receipt, Printer, Download, CreditCard, CheckCircle, Loader2, QrCode, Copy } from 'lucide-react';
+import { supabase, isSupabaseConfigured } from '../lib/supabase';
 
 export default function PublicInvoiceView({ invoiceId }) {
   const [data, setData] = useState(null);
@@ -22,26 +23,112 @@ export default function PublicInvoiceView({ invoiceId }) {
 
   const [showPayModal, setShowPayModal] = useState(false);
 
-  // Scan localStorage for the matching invoice
-  const loadInvoice = () => {
+  // Clipboard copy states
+  const [copiedUpi, setCopiedUpi] = useState(false);
+  const [copiedBank, setCopiedBank] = useState(false);
+  const [copiedAccount, setCopiedAccount] = useState(false);
+  const [copiedIfsc, setCopiedIfsc] = useState(false);
+
+  const copyToClipboard = (text, setCopiedFlag) => {
+    if (!text) return;
+    navigator.clipboard.writeText(text);
+    setCopiedFlag(true);
+    setTimeout(() => setCopiedFlag(false), 2000);
+  };
+
+  // Scan Supabase or localStorage for the matching invoice
+  const loadInvoice = async () => {
     setLoading(true);
     let found = null;
 
-    for (let i = 0; i < localStorage.length; i++) {
-      const key = localStorage.key(i);
-      if (key && key.startsWith('invoice_saas_invoices_')) {
-        try {
-          const invoices = JSON.parse(localStorage.getItem(key) || '[]');
-          const inv = invoices.find(item => item.id === invoiceId);
-          if (inv) {
-            const userId = key.replace('invoice_saas_invoices_', '');
-            const profileStr = localStorage.getItem(`invoice_saas_profile_${userId}`);
-            const profile = profileStr ? JSON.parse(profileStr) : null;
-            found = { invoice: inv, profile, userId, storageKey: key };
-            break;
+    if (isSupabaseConfigured) {
+      try {
+        const { data: dbInv, error: invErr } = await supabase
+          .from('invoices')
+          .select('*')
+          .eq('id', invoiceId)
+          .single();
+
+        if (dbInv) {
+          const { data: dbProf } = await supabase
+            .from('profiles')
+            .select('*')
+            .eq('id', dbInv.user_id)
+            .single();
+
+          const profile = dbProf ? {
+            companyName: dbProf.company_name || '',
+            email: dbProf.email || '',
+            phone: dbProf.phone || '',
+            address: dbProf.address || '',
+            gstin: dbProf.gstin || '',
+            pan: dbProf.pan || '',
+            paymentDetails: dbProf.payment_details || {
+              bankName: '',
+              accountNumber: '',
+              ifscCode: '',
+              routingNumber: '',
+              paypalEmail: '',
+              upiId: '',
+              additionalInstructions: ''
+            }
+          } : null;
+
+          const invoice = {
+            id: dbInv.id,
+            invoiceNumber: dbInv.invoice_number,
+            clientId: dbInv.client_id,
+            clientName: dbInv.client_name,
+            clientEmail: dbInv.client_email,
+            clientAddress: dbInv.client_address,
+            clientPhone: dbInv.client_phone,
+            clientGstin: dbInv.client_gstin,
+            issueDate: dbInv.issue_date,
+            dueDate: dbInv.due_date,
+            items: dbInv.items,
+            subtotal: Number(dbInv.subtotal),
+            discountRate: Number(dbInv.discount_rate),
+            discountAmount: Number(dbInv.discount_amount),
+            taxableValue: Number(dbInv.taxable_value),
+            gstRate: Number(dbInv.gst_rate),
+            gstType: dbInv.gst_type,
+            gstAmount: Number(dbInv.gst_amount),
+            taxAmount: Number(dbInv.gst_amount),
+            cgstAmount: Number(dbInv.cgst_amount),
+            sgstAmount: Number(dbInv.sgst_amount),
+            igstAmount: Number(dbInv.igst_amount),
+            total: Number(dbInv.total),
+            notes: dbInv.notes,
+            status: dbInv.status,
+            createdAt: dbInv.created_at,
+            updatedAt: dbInv.updated_at
+          };
+
+          found = { invoice, profile, userId: dbInv.user_id };
+        }
+      } catch (err) {
+        console.error('Error fetching public invoice from Supabase:', err);
+      }
+    }
+
+    if (!found) {
+      // Fallback: Scan localStorage
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key && key.startsWith('invoice_saas_invoices_')) {
+          try {
+            const invoices = JSON.parse(localStorage.getItem(key) || '[]');
+            const inv = invoices.find(item => item.id === invoiceId);
+            if (inv) {
+              const userId = key.replace('invoice_saas_invoices_', '');
+              const profileStr = localStorage.getItem(`invoice_saas_profile_${userId}`);
+              const profile = profileStr ? JSON.parse(profileStr) : null;
+              found = { invoice: inv, profile, userId, storageKey: key };
+              break;
+            }
+          } catch (e) {
+            console.error('Error scanning public invoices', e);
           }
-        } catch (e) {
-          console.error('Error scanning public invoices', e);
         }
       }
     }
@@ -85,7 +172,7 @@ export default function PublicInvoiceView({ invoiceId }) {
         return;
       }
     } else if (paymentMethod === 'upi') {
-      if (!clientUpiId && !profile?.paymentDetails?.upiId) {
+      if (!clientUpiId && !data?.profile?.paymentDetails?.upiId) {
         alert('Please provide your UPI VPA');
         return;
       }
@@ -94,29 +181,47 @@ export default function PublicInvoiceView({ invoiceId }) {
     setIsPaying(true);
     
     // Simulate payment processing delay
-    setTimeout(() => {
+    setTimeout(async () => {
       try {
-        const key = data.storageKey;
-        const invoices = JSON.parse(localStorage.getItem(key) || '[]');
-        const updatedInvoices = invoices.map(inv => {
-          if (inv.id === invoiceId) {
-            return { ...inv, status: 'paid', updatedAt: new Date().toISOString() };
-          }
-          return inv;
-        });
+        if (isSupabaseConfigured) {
+          const { error } = await supabase
+            .from('invoices')
+            .update({ status: 'paid', updated_at: new Date().toISOString() })
+            .eq('id', invoiceId);
 
-        localStorage.setItem(key, JSON.stringify(updatedInvoices));
-        
-        setIsPaying(false);
-        setPaySuccess(true);
-        setShowPayModal(false);
-        
-        setData(prev => ({
-          ...prev,
-          invoice: { ...prev.invoice, status: 'paid' }
-        }));
+          if (error) throw error;
+
+          setIsPaying(false);
+          setPaySuccess(true);
+          setShowPayModal(false);
+          
+          setData(prev => ({
+            ...prev,
+            invoice: { ...prev.invoice, status: 'paid' }
+          }));
+        } else {
+          const key = data.storageKey;
+          const invoices = JSON.parse(localStorage.getItem(key) || '[]');
+          const updatedInvoices = invoices.map(inv => {
+            if (inv.id === invoiceId) {
+              return { ...inv, status: 'paid', updatedAt: new Date().toISOString() };
+            }
+            return inv;
+          });
+
+          localStorage.setItem(key, JSON.stringify(updatedInvoices));
+          
+          setIsPaying(false);
+          setPaySuccess(true);
+          setShowPayModal(false);
+          
+          setData(prev => ({
+            ...prev,
+            invoice: { ...prev.invoice, status: 'paid' }
+          }));
+        }
       } catch (err) {
-        console.error(err);
+        console.error('Payment processing failed:', err);
         alert('Payment processing failed. Please try again.');
         setIsPaying(false);
       }
@@ -284,7 +389,19 @@ export default function PublicInvoiceView({ invoiceId }) {
                 
                 {profile.paymentDetails.upiId && (
                   <div className="upi-details-block mb-3">
-                    <p className="notes-text"><strong>UPI ID / VPA:</strong> {profile.paymentDetails.upiId}</p>
+                    <div className="notes-text flex-align-center">
+                      <strong>UPI ID / VPA:</strong> 
+                      <span className="font-monospace ml-1">{profile.paymentDetails.upiId}</span>
+                      <button 
+                        type="button"
+                        className="btn-copy no-print" 
+                        onClick={() => copyToClipboard(profile.paymentDetails.upiId, setCopiedUpi)}
+                        title="Copy UPI ID"
+                      >
+                        {copiedUpi ? <CheckCircle size={14} className="text-success" /> : <Copy size={14} />}
+                        <span className="copy-tooltip">{copiedUpi ? 'Copied!' : 'Copy'}</span>
+                      </button>
+                    </div>
                     
                     {/* Embedded UPI QR code for client scanning */}
                     {qrCodeUrl && (
@@ -302,9 +419,42 @@ export default function PublicInvoiceView({ invoiceId }) {
                 {profile.paymentDetails.bankName && (
                   <div className="bank-details-block">
                     <p className="notes-text"><strong>Bank Transfer:</strong></p>
-                    <p className="notes-text">Bank: {profile.paymentDetails.bankName}</p>
-                    <p className="notes-text">Account No: {profile.paymentDetails.accountNumber}</p>
-                    <p className="notes-text">IFSC Code: {profile.paymentDetails.ifscCode || profile.paymentDetails.routingNumber}</p>
+                    <div className="notes-text flex-align-center">
+                      <span>Bank: {profile.paymentDetails.bankName}</span>
+                      <button 
+                        type="button"
+                        className="btn-copy no-print" 
+                        onClick={() => copyToClipboard(profile.paymentDetails.bankName, setCopiedBank)}
+                        title="Copy Bank Name"
+                      >
+                        {copiedBank ? <CheckCircle size={14} className="text-success" /> : <Copy size={14} />}
+                        <span className="copy-tooltip">{copiedBank ? 'Copied!' : 'Copy'}</span>
+                      </button>
+                    </div>
+                    <div className="notes-text flex-align-center">
+                      <span>Account No: {profile.paymentDetails.accountNumber}</span>
+                      <button 
+                        type="button"
+                        className="btn-copy no-print" 
+                        onClick={() => copyToClipboard(profile.paymentDetails.accountNumber, setCopiedAccount)}
+                        title="Copy Account Number"
+                      >
+                        {copiedAccount ? <CheckCircle size={14} className="text-success" /> : <Copy size={14} />}
+                        <span className="copy-tooltip">{copiedAccount ? 'Copied!' : 'Copy'}</span>
+                      </button>
+                    </div>
+                    <div className="notes-text flex-align-center">
+                      <span>IFSC Code: {profile.paymentDetails.ifscCode || profile.paymentDetails.routingNumber}</span>
+                      <button 
+                        type="button"
+                        className="btn-copy no-print" 
+                        onClick={() => copyToClipboard(profile.paymentDetails.ifscCode || profile.paymentDetails.routingNumber, setCopiedIfsc)}
+                        title="Copy IFSC Code"
+                      >
+                        {copiedIfsc ? <CheckCircle size={14} className="text-success" /> : <Copy size={14} />}
+                        <span className="copy-tooltip">{copiedIfsc ? 'Copied!' : 'Copy'}</span>
+                      </button>
+                    </div>
                   </div>
                 )}
 
@@ -896,6 +1046,57 @@ export default function PublicInvoiceView({ invoiceId }) {
           .no-print-flex {
             display: none !important;
           }
+        }
+
+        .flex-align-center {
+          display: inline-flex;
+          align-items: center;
+          gap: 0.5rem;
+          flex-wrap: wrap;
+        }
+        .ml-1 {
+          margin-left: 0.25rem;
+        }
+        .btn-copy {
+          background: transparent;
+          border: none;
+          color: var(--text-tertiary);
+          cursor: pointer;
+          display: inline-flex;
+          align-items: center;
+          padding: 0.125rem 0.25rem;
+          border-radius: 4px;
+          position: relative;
+          transition: all var(--transition-fast);
+        }
+        .btn-copy:hover {
+          color: var(--primary);
+          background-color: var(--primary-light);
+        }
+        .dark .btn-copy:hover {
+          background-color: rgba(99, 102, 241, 0.15);
+        }
+        .copy-tooltip {
+          visibility: hidden;
+          background-color: #0f172a;
+          color: #fff;
+          text-align: center;
+          border-radius: 4px;
+          padding: 0.25rem 0.5rem;
+          position: absolute;
+          z-index: 10;
+          bottom: 125%;
+          left: 50%;
+          transform: translateX(-50%);
+          opacity: 0;
+          transition: opacity 0.2s;
+          font-size: 0.6875rem;
+          white-space: nowrap;
+          pointer-events: none;
+        }
+        .btn-copy:hover .copy-tooltip {
+          visibility: visible;
+          opacity: 1;
         }
       `}</style>
     </div>

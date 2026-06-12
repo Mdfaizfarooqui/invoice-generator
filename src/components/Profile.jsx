@@ -23,8 +23,9 @@ export default function Profile() {
 
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
     setSaved(false);
@@ -70,9 +71,16 @@ export default function Profile() {
       }
     };
 
-    updateProfile(updatedProfile);
-    setSaved(true);
-    setTimeout(() => setSaved(false), 3000);
+    setLoading(true);
+    try {
+      await updateProfile(updatedProfile);
+      setSaved(true);
+      setTimeout(() => setSaved(false), 3000);
+    } catch (err) {
+      setError(err.message || 'Failed to save profile settings.');
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -276,9 +284,9 @@ export default function Profile() {
                 <span>Profile settings saved successfully!</span>
               </div>
             )}
-            <button type="submit" className="btn btn-primary w-full py-3">
+            <button type="submit" className="btn btn-primary w-full py-3" disabled={loading}>
               <Save size={20} />
-              <span>Save Profile Changes</span>
+              <span>{loading ? 'Saving Changes...' : 'Save Profile Changes'}</span>
             </button>
           </div>
         </div>

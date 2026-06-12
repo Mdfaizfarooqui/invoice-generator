@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
+import { isSupabaseConfigured } from '../lib/supabase';
 import { 
   LayoutDashboard, 
   FileText, 
@@ -106,6 +107,11 @@ export default function Sidebar({ currentRoute, setRoute }) {
         </nav>
 
         <div className="sidebar-footer">
+          <div className={`db-status-badge ${isSupabaseConfigured ? 'connected' : 'local'}`}>
+            <span className="db-status-dot"></span>
+            <span>{isSupabaseConfigured ? 'Cloud DB Active' : 'Local Demo Mode'}</span>
+          </div>
+
           <div className="sidebar-user-info">
             <div className="user-avatar">
               {(user?.businessName || user?.email || 'U')[0].toUpperCase()}
@@ -230,6 +236,40 @@ export default function Sidebar({ currentRoute, setRoute }) {
           display: flex;
           flex-direction: column;
           gap: 1rem;
+        }
+        .db-status-badge {
+          display: flex;
+          align-items: center;
+          gap: 0.5rem;
+          padding: 0.5rem 0.75rem;
+          border-radius: var(--radius-sm);
+          font-size: 0.75rem;
+          font-weight: 600;
+          border: 1px solid transparent;
+        }
+        .db-status-badge.connected {
+          background-color: rgba(16, 185, 129, 0.1);
+          color: #10b981;
+          border-color: rgba(16, 185, 129, 0.2);
+        }
+        .db-status-badge.local {
+          background-color: rgba(245, 158, 11, 0.1);
+          color: #f59e0b;
+          border-color: rgba(245, 158, 11, 0.2);
+        }
+        .db-status-dot {
+          width: 8px;
+          height: 8px;
+          border-radius: 50%;
+          display: inline-block;
+        }
+        .db-status-badge.connected .db-status-dot {
+          background-color: #10b981;
+          box-shadow: 0 0 8px #10b981;
+        }
+        .db-status-badge.local .db-status-dot {
+          background-color: #f59e0b;
+          box-shadow: 0 0 8px #f59e0b;
         }
         .sidebar-user-info {
           display: flex;

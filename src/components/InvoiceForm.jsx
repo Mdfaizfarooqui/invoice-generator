@@ -18,6 +18,7 @@ export default function InvoiceForm({ invoiceId, setRoute }) {
   const [discountRate, setDiscountRate] = useState(0);
   const [notes, setNotes] = useState('');
   const [error, setError] = useState('');
+  const [saving, setSaving] = useState(false);
 
   // Load invoice data if in edit mode
   useEffect(() => {
@@ -98,7 +99,7 @@ export default function InvoiceForm({ invoiceId, setRoute }) {
     total 
   } = calculateTotals(items, gstRate, discountRate, gstType);
 
-  const handleSave = (status) => {
+  const handleSave = async (status) => {
     setError('');
 
     // Validation
@@ -156,15 +157,21 @@ export default function InvoiceForm({ invoiceId, setRoute }) {
       status
     };
 
-    if (isEdit) {
-      const oldInv = getInvoiceById(invoiceId);
-      const finalStatus = (oldInv?.status === 'paid') ? 'paid' : status;
-      updateInvoice(invoiceId, { ...invoicePayload, status: finalStatus });
-    } else {
-      addInvoice(invoicePayload);
+    setSaving(true);
+    try {
+      if (isEdit) {
+        const oldInv = getInvoiceById(invoiceId);
+        const finalStatus = (oldInv?.status === 'paid') ? 'paid' : status;
+        await updateInvoice(invoiceId, { ...invoicePayload, status: finalStatus });
+      } else {
+        await addInvoice(invoicePayload);
+      }
+      setRoute('invoices');
+    } catch (err) {
+      setError(err.message || 'An error occurred while saving.');
+    } finally {
+      setSaving(false);
     }
-
-    setRoute('invoices');
   };
 
   return (
@@ -473,20 +480,20 @@ export default function InvoiceForm({ invoiceId, setRoute }) {
           {/* Builder Actions */}
           <div className="builder-actions-card">
             {isEdit && getInvoiceById(invoiceId)?.status === 'paid' ? (
-              <button className="btn btn-primary w-full py-3 mb-3" onClick={() => handleSave('paid')}>
+              <button className="btn btn-primary w-full py-3 mb-3" onClick={() => handleSave('paid')} disabled={saving}>
                 <Save size={18} />
-                <span>Save Changes</span>
+                <span>{saving ? 'Saving...' : 'Save Changes'}</span>
               </button>
             ) : (
               <>
-                <button className="btn btn-primary w-full py-3 mb-3" onClick={() => handleSave('sent')}>
+                <button className="btn btn-primary w-full py-3 mb-3" onClick={() => handleSave('sent')} disabled={saving}>
                   <Send size={18} />
-                  <span>{isEdit ? 'Save & Mark Sent' : 'Create & Send'}</span>
+                  <span>{saving ? 'Saving...' : (isEdit ? 'Save & Mark Sent' : 'Create & Send')}</span>
                 </button>
                 
-                <button className="btn btn-secondary w-full py-3" onClick={() => handleSave('draft')}>
+                <button className="btn btn-secondary w-full py-3" onClick={() => handleSave('draft')} disabled={saving}>
                   <Save size={18} />
-                  <span>Save as Draft</span>
+                  <span>{saving ? 'Saving...' : 'Save as Draft'}</span>
                 </button>
               </>
             )}

@@ -11,7 +11,7 @@ export const formatDate = (dateString) => {
   if (!dateString) return '';
   const date = new Date(dateString);
   if (isNaN(date.getTime())) return '';
-  return new Intl.NumberFormat('en-IN', {
+  return new Intl.DateTimeFormat('en-IN', {
     year: 'numeric',
     month: 'short',
     day: 'numeric'

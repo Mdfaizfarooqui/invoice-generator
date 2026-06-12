@@ -3,7 +3,7 @@ import { useData } from '../context/DataContext';
 import { formatCurrency, formatDate, getStatusColor } from '../utils/helpers';
 import { 
   DollarSign, FileText, CheckCircle2, AlertCircle, 
-  ArrowUpRight, Plus, Users, Settings, Receipt 
+  ArrowUpRight, Plus, Users, Settings, Receipt, ChevronRight 
 } from 'lucide-react';
 
 export default function Dashboard({ setRoute, setEditingInvoiceId }) {
@@ -36,6 +36,42 @@ export default function Dashboard({ setRoute, setEditingInvoiceId }) {
     setEditingInvoiceId(id);
     setRoute(`invoices/edit/${id}`);
   };
+
+  // Group invoices by month for the last 6 months
+  const monthlyData = (() => {
+    const months = [];
+    const now = new Date();
+    for (let i = 5; i >= 0; i--) {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      const label = d.toLocaleString('en-US', { month: 'short' });
+      months.push({
+        year: d.getFullYear(),
+        month: d.getMonth(),
+        label,
+        billed: 0,
+        collected: 0,
+      });
+    }
+
+    invoices.forEach(inv => {
+      const invDate = new Date(inv.issueDate || inv.createdAt);
+      if (isNaN(invDate.getTime())) return;
+      const invYear = invDate.getFullYear();
+      const invMonth = invDate.getMonth();
+
+      const match = months.find(m => m.year === invYear && m.month === invMonth);
+      if (match) {
+        match.billed += inv.total;
+        if (inv.status === 'paid') {
+          match.collected += inv.total;
+        }
+      }
+    });
+
+    return months;
+  })();
+
+  const maxBilled = Math.max(...monthlyData.map(m => m.billed), 1000);
 
   // Metrics for visualization
   const totalInvoicesCount = invoices.length;
@@ -111,29 +147,104 @@ export default function Dashboard({ setRoute, setEditingInvoiceId }) {
       <div className="dashboard-grid mb-6">
         {/* Recent Invoices & Analytics */}
         <div className="dashboard-main-panel">
-          {/* Revenue breakdown progress bar */}
+          {/* Revenue breakdown & Collection Trends card */}
           <div className="card mb-6">
-            <h3>Invoice Status Breakdown</h3>
-            <p className="text-secondary mb-4">A visual distribution of all your generated invoices.</p>
+            <div className="analytics-header mb-4">
+              <h3>Financial Collection Trends</h3>
+              <p className="text-secondary">Compare total billed amount vs. actual payments collected over the last 6 months.</p>
+            </div>
             
             {totalInvoicesCount === 0 ? (
-              <p className="text-tertiary">No invoices created yet to display breakdown.</p>
+              <div className="text-center py-6">
+                <p className="text-tertiary">No invoices created yet to display analytics.</p>
+              </div>
             ) : (
-              <>
-                <div className="progress-bar-composite">
-                  <div className="progress-segment bg-success" style={{ width: `${paidPct}%` }} title={`Paid: ${stats.paidCount} (${paidPct.toFixed(0)}%)`} />
-                  <div className="progress-segment bg-primary" style={{ width: `${unpaidPct}%` }} title={`Unpaid: ${stats.unpaidCount} (${unpaidPct.toFixed(0)}%)`} />
-                  <div className="progress-segment bg-danger" style={{ width: `${overduePct}%` }} title={`Overdue: ${stats.overdueCount} (${overduePct.toFixed(0)}%)`} />
-                  <div className="progress-segment bg-slate" style={{ width: `${draftPct}%` }} title={`Draft: ${stats.draftCount} (${draftPct.toFixed(0)}%)`} />
+              <div className="analytics-content">
+                <div className="chart-container mb-6" style={{ width: '100%', overflow: 'hidden' }}>
+                  <svg viewBox="0 0 500 220" width="100%" height="100%" className="analytics-svg">
+                    {/* Y-Axis Grid Lines */}
+                    {[0, 0.25, 0.5, 0.75, 1].map((ratio, index) => {
+                      const yVal = 170 - ratio * 150;
+                      const amount = ratio * maxBilled;
+                      return (
+                        <g key={index}>
+                          <line x1="50" y1={yVal} x2="480" y2={yVal} stroke="var(--border-color)" strokeWidth="1" strokeDasharray="3 3" />
+                          <text x="42" y={yVal + 3} textAnchor="end" fill="var(--text-tertiary)" fontSize="9" fontWeight="500">
+                            {amount >= 1000 ? `₹${(amount / 1000).toFixed(1)}k` : `₹${amount.toFixed(0)}`}
+                          </text>
+                        </g>
+                      );
+                    })}
+
+                    {/* Bars */}
+                    {monthlyData.map((month, idx) => {
+                      const monthWidth = 430 / 6;
+                      const groupCenter = 50 + idx * monthWidth + monthWidth / 2;
+                      const billedHeight = (month.billed / maxBilled) * 150;
+                      const collectedHeight = (month.collected / maxBilled) * 150;
+
+                      return (
+                        <g key={idx} className="chart-group">
+                          {/* Billed Bar */}
+                          <rect
+                            x={groupCenter - 15}
+                            y={170 - billedHeight}
+                            width="12"
+                            height={billedHeight}
+                            fill="var(--primary)"
+                            opacity="0.85"
+                            rx="2"
+                            className="chart-bar"
+                          >
+                            <title>{`Billed: ${formatCurrency(month.billed)}`}</title>
+                          </rect>
+
+                          {/* Collected Bar */}
+                          <rect
+                            x={groupCenter + 3}
+                            y={170 - collectedHeight}
+                            width="12"
+                            height={collectedHeight}
+                            fill="var(--success)"
+                            opacity="0.85"
+                            rx="2"
+                            className="chart-bar"
+                          >
+                            <title>{`Collected: ${formatCurrency(month.collected)}`}</title>
+                          </rect>
+
+                          {/* X-Axis Month Label */}
+                          <text x={groupCenter} y="190" textAnchor="middle" fill="var(--text-secondary)" fontSize="10" fontWeight="600">
+                            {month.label}
+                          </text>
+                        </g>
+                      );
+                    })}
+
+                    {/* X-Axis line */}
+                    <line x1="50" y1="170" x2="480" y2="170" stroke="var(--text-tertiary)" strokeWidth="1.5" />
+                  </svg>
                 </div>
-                
-                <div className="legend-grid mt-4">
-                  <div className="legend-item"><span className="legend-dot bg-success" /><span>Paid ({stats.paidCount})</span></div>
-                  <div className="legend-item"><span className="legend-dot bg-primary" /><span>Sent ({stats.unpaidCount})</span></div>
-                  <div className="legend-item"><span className="legend-dot bg-danger" /><span>Overdue ({stats.overdueCount})</span></div>
-                  <div className="legend-item"><span className="legend-dot bg-slate" /><span>Draft ({stats.draftCount})</span></div>
+
+                <div className="divider mb-4" />
+
+                <div className="status-breakdown-section">
+                  <h4 className="font-small text-secondary uppercase-label mb-2">Invoice Status Breakdown</h4>
+                  <div className="progress-bar-composite">
+                    <div className="progress-segment bg-success" style={{ width: `${paidPct}%` }} title={`Paid: ${stats.paidCount} (${paidPct.toFixed(0)}%)`} />
+                    <div className="progress-segment bg-primary" style={{ width: `${unpaidPct}%` }} title={`Unpaid: ${stats.unpaidCount} (${unpaidPct.toFixed(0)}%)`} />
+                    <div className="progress-segment bg-danger" style={{ width: `${overduePct}%` }} title={`Overdue: ${stats.overdueCount} (${overduePct.toFixed(0)}%)`} />
+                    <div className="progress-segment bg-slate" style={{ width: `${draftPct}%` }} title={`Draft: ${stats.draftCount} (${draftPct.toFixed(0)}%)`} />
+                  </div>
+                  
+                  <div className="legend-grid mt-4">
+                    <div className="legend-item"><span className="legend-dot bg-success" /><span>Paid ({stats.paidCount})</span></div>
+                    <div className="legend-item"><span className="legend-dot bg-primary" /><span>Sent ({stats.unpaidCount})</span></div>
+                    <div className="legend-item"><span className="legend-dot bg-danger" /><span>Overdue ({stats.overdueCount})</span></div>
+                    <div className="legend-item"><span className="legend-dot bg-slate" /><span>Draft ({stats.draftCount})</span></div>
+                  </div>
                 </div>
-              </>
+              </div>
             )}
           </div>
 
@@ -225,6 +336,25 @@ export default function Dashboard({ setRoute, setEditingInvoiceId }) {
       </div>
 
       <style>{`
+        .chart-bar {
+          transition: transform 0.2s ease, opacity 0.2s ease;
+          cursor: pointer;
+        }
+        .chart-bar:hover {
+          opacity: 1;
+          transform: scaleY(1.02);
+          transform-origin: bottom;
+        }
+        .uppercase-label {
+          text-transform: uppercase;
+          letter-spacing: 0.05em;
+          font-weight: 700;
+          font-size: 0.75rem;
+        }
+        .analytics-svg {
+          background-color: var(--bg-secondary);
+          border-radius: var(--radius-sm);
+        }
         .dashboard-grid {
           display: grid;
           grid-template-columns: 1fr 320px;

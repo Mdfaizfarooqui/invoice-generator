@@ -23,9 +23,9 @@ export default function Auth() {
     setLoading(true);
     try {
       if (isLogin) {
-        login(email, password);
+        await login(email, password);
       } else {
-        signup(email, password, businessName);
+        await signup(email, password, businessName);
       }
     } catch (err) {
       setError(err.message || 'An error occurred. Please try again.');

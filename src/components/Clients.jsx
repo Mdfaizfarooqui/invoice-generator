@@ -17,6 +17,7 @@ export default function Clients() {
   const [address, setAddress] = useState('');
   const [gstin, setGstin] = useState('');
   const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
 
   const openAddModal = () => {
     setEditingClient(null);
@@ -26,6 +27,7 @@ export default function Clients() {
     setAddress('');
     setGstin('');
     setError('');
+    setLoading(false);
     setIsModalOpen(true);
   };
 
@@ -37,10 +39,11 @@ export default function Clients() {
     setAddress(client.address || '');
     setGstin(client.gstin || '');
     setError('');
+    setLoading(false);
     setIsModalOpen(true);
   };
 
-  const handleSave = (e) => {
+  const handleSave = async (e) => {
     e.preventDefault();
     setError('');
 
@@ -63,13 +66,19 @@ export default function Clients() {
       gstin: gstin.toUpperCase() 
     };
 
-    if (editingClient) {
-      updateClient(editingClient.id, clientPayload);
-    } else {
-      addClient(clientPayload);
+    setLoading(true);
+    try {
+      if (editingClient) {
+        await updateClient(editingClient.id, clientPayload);
+      } else {
+        await addClient(clientPayload);
+      }
+      setIsModalOpen(false);
+    } catch (err) {
+      setError(err.message || 'An error occurred while saving.');
+    } finally {
+      setLoading(false);
     }
-
-    setIsModalOpen(false);
   };
 
   const handleDelete = (clientId) => {
@@ -276,11 +285,11 @@ export default function Clients() {
               </div>
 
               <div className="modal-footer">
-                <button type="button" className="btn btn-secondary" onClick={() => setIsModalOpen(false)}>
+                <button type="button" className="btn btn-secondary" onClick={() => setIsModalOpen(false)} disabled={loading}>
                   Cancel
                 </button>
-                <button type="submit" className="btn btn-primary">
-                  {editingClient ? 'Save Changes' : 'Create Client'}
+                <button type="submit" className="btn btn-primary" disabled={loading}>
+                  {loading ? 'Saving...' : editingClient ? 'Save Changes' : 'Create Client'}
                 </button>
               </div>
             </form>
